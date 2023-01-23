@@ -1,0 +1,72 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+_global_script_classes=[{
+"base": "Label",
+"class": &"Description",
+"language": &"GDScript",
+"path": "res://Description.gd"
+}, {
+"base": "RefCounted",
+"class": &"HTML",
+"language": &"GDScript",
+"path": "res://HTML.gd"
+}, {
+"base": "TextEdit",
+"class": &"Logs",
+"language": &"GDScript",
+"path": "res://Logs.gd"
+}, {
+"base": "Control",
+"class": &"MainScreen",
+"language": &"GDScript",
+"path": "res://MainScreen.gd"
+}, {
+"base": "OptionButton",
+"class": &"PlatformSelection",
+"language": &"GDScript",
+"path": "res://PlatformSelection.gd"
+}, {
+"base": "Label",
+"class": &"Status",
+"language": &"GDScript",
+"path": "res://Status.gd"
+}, {
+"base": "PanelContainer",
+"class": &"VersionList",
+"language": &"GDScript",
+"path": "res://VersionList.gd"
+}]
+_global_script_class_icons={
+"Description": "",
+"HTML": "",
+"Logs": "",
+"MainScreen": "",
+"PlatformSelection": "",
+"Status": "",
+"VersionList": ""
+}
+
+[application]
+
+config/name="Godot Version Manager"
+run/main_scene="res://MainScreen.tscn"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="GodotVersionManager"
+config/features=PackedStringArray("4.0", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Settings="*res://Settings.gd"
+
+[gui]
+
+theme/custom="res://Theme.tres"
