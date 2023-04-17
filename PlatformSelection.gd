@@ -26,12 +26,31 @@ func _on_version_list_new_version_added(version):
 
 func _is_for_this_platform(platform: String):
   var this_platform := OS.get_name()
+  var this_arch := Engine.get_architecture_name()
+  var is_64_bit := "64" in this_arch
   match this_platform:
     "Windows", "macOS", "Linux":
-      return platform.contains(this_platform)
+      return platform.contains(this_platform) and (platform.contains("64") == is_64_bit)
     "UWP":
-      return platform.contains("Windows")
+      return platform.contains("Windows") and (platform.contains("64") == is_64_bit)
   return false
+
+func select_current_platform():
+  var use_mono: bool = Settings.data.get_value("Settings", "IncludeMono", false) and Settings.data.get_value("Settings", "AutoSelectMono", false)
+  if use_mono:
+    for i in item_count:
+      if not get_item_text(i).contains("Mono"):
+        continue
+      if _is_for_this_platform(get_item_text(i)):
+        logs.add("Auto selecting platform %d: %s" % [i, get_item_text(i)])
+        select(i)
+        return
+  for i in item_count:
+    if _is_for_this_platform(get_item_text(i)):
+      logs.add("Auto selecting platform %d: %s" % [i, get_item_text(i)])
+      select(i)
+      return
+  select(0)
 
 func refresh_platform_list():
   var platforms: Array = main_screen.versions[_current_version]["downloads"].keys() if _current_version in main_screen.versions else []
@@ -46,23 +65,7 @@ func refresh_platform_list():
       continue
     popup.add_item(platform)
   if Settings.data.get_value("Settings", "AutoSelectPlatform", true):
-    (func():
-      var use_mono: bool = Settings.data.get_value("Settings", "IncludeMono", false) and Settings.data.get_value("Settings", "AutoSelectMono", false)
-      if use_mono:
-        for i in item_count:
-          if not get_item_text(i).contains("Mono"):
-            continue
-          if _is_for_this_platform(get_item_text(i)):
-            logs.add("Auto selecting platform %d: %s" % [i, get_item_text(i)])
-            select(i)
-            return
-      for i in item_count:
-        if _is_for_this_platform(get_item_text(i)):
-          logs.add("Auto selecting platform %d: %s" % [i, get_item_text(i)])
-          select(i)
-          return
-      select(0)
-      ).call()
+    select_current_platform()
   elif selected == -1 or current_selection != get_item_text(selected):
     select(0)
   _update_ui_states()

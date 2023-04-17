@@ -3,7 +3,7 @@ class_name MainScreen extends Control
 @export var logs: Logs
 var versions: Dictionary
 
-var sorted_versions: Array[String]
+var sorted_versions: Array
 
 const GODOT_URL := "https://downloads.tuxfamily.org/godotengine/"
 
@@ -270,7 +270,7 @@ func _add_build_from_html(row: String) -> Dictionary:
     if row_name.is_empty():
       return {}
     var version := HTML.get_child_tag(row_name, "a")
-    if not version.begins_with("3.5") and not version.begins_with("4."):
+    if not (version.begins_with("3.") or version.begins_with("4.")):
       return {}
     var row_modified := HTML.get_child_tag(row, "td", ["class=\"m\""])
     if row_modified.is_empty():

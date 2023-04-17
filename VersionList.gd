@@ -52,6 +52,8 @@ func refresh_version_list():
       add_version(version)
     elif Settings.data.get_value("Settings", "IncludeGodot4PreReleases", true) and version.contains("Godot 4") and not version.contains("stable"):
       add_version(version)
+    elif version.contains("Godot 4") and version.contains("stable"):
+      add_version(version)
   if currently_selected_index == -1:
     select_version(0)
 
