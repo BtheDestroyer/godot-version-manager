@@ -282,7 +282,7 @@ func _add_prerelease_from_html(row: String, version: String) -> Dictionary:
     if row_name.is_empty():
       return {}
     var build := HTML.get_child_tag(row_name, "a")
-    if not build.begins_with("pre-alpha") and not build.begins_with("alpha") and not build.begins_with("beta") and not build.begins_with("rc"):
+    if not build.begins_with("pre-alpha") and not build.begins_with("alpha") and not build.begins_with("beta") and not build.begins_with("rc") and not build.begins_with("dev"):
       return {}
     var row_modified := HTML.get_child_tag(row, "td", ["class=\"m\""])
     if row_modified.is_empty():
