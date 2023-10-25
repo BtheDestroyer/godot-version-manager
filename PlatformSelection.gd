@@ -74,9 +74,9 @@ func _get_download_url(platform: String) -> String:
   if not _current_version in main_screen.versions:
     return ""
   var version: Dictionary = main_screen.versions[_current_version]
-  if not ("url" in version and "downloads" in version and platform in version["downloads"]):
+  if not ("downloads" in version and platform in version["downloads"]):
     return ""
-  return version["url"].path_join(version["downloads"][platform])
+  return version["downloads"][platform]
 
 func _get_current_download_url() -> String:
   if selected <= 0 or selected >= get_popup().item_count:
@@ -101,7 +101,9 @@ func _get_current_download_path() -> String:
   return _get_download_path(platform)
 
 func _get_executable_path(platform: String) -> String:
-  var version := "%s-%s" % [main_screen.versions[_current_version]["version"], main_screen.versions[_current_version]["build"]]
+  var version: String = main_screen.versions[_current_version]["version"]
+  if "build" in main_screen.versions[_current_version]:
+    version = "%s-%s" % [main_screen.versions[_current_version]["version"], main_screen.versions[_current_version]["build"]]
   var file: String
   var root_directory: String = Settings.data.get_value("Settings", "LocalBuildDirectory", "user://builds")
   match platform:

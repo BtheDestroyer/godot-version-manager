@@ -11,10 +11,11 @@ config_version=5
 [application]
 
 config/name="Godot Version Manager"
+config/version="1.3"
 run/main_scene="res://MainScreen.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="GodotVersionManager"
-config/features=PackedStringArray("4.0", "Forward Plus")
+config/features=PackedStringArray("4.2", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]

@@ -45,61 +45,19 @@ func refresh_builds():
   versions.clear()
   sorted_versions.clear()
   _add_local_builds()
-  _get_godot_builds(await _get_html_file_list_array(GODOT_URL))
+  _get_github_builds()
 
-func _get_html_file_list(url: String) -> String:
-  var http_response: Array
+func _get_releases_from_github() -> Array:
   var http := HTTPRequest.new()
   add_child(http)
-  var request_result := http.request(url)
-  if request_result != OK:
-    push_error("HTTP Request failed: ", error_string(request_result))
-    return ""
-  http_response = await http.request_completed
+  http.request("https://api.github.com/repos/godotengine/godot-builds/releases?per_page=50", ["Accept: application/vnd.github+json"])
+  var result = await http.request_completed
   http.queue_free()
-  var response_code: int = http_response[1]
-  if response_code != 200:
-    push_error("HTTP response_code=", response_code, " from url ", url)
-    return ""
-  var headers: PackedStringArray = http_response[2]
-  var body: PackedByteArray = http_response[3]
-  var html := HTML.get_body_as_string(headers, body)
-  var html_list := HTML.walk_html_for_tag_path(html, [
-    "body",
-    ["div", ["class=\"list\""]],
-    "table",
-    "tbody"
-    ])
-  if html_list.is_empty():
-    push_warning("HTTP Response had no list")
-    return ""
-  return html_list
+  return JSON.parse_string(result[3].get_string_from_utf8())
 
-func _convert_html_file_list_to_array(html_list: String) -> PackedStringArray:
-  var rows: PackedStringArray
-  while not html_list.is_empty():
-    var row := HTML.get_child_tag(html_list, "tr")
-    if row.is_empty():
-      break
-    rows.append(row)
-    html_list = html_list.substr(html_list.find(row) + row.length() + "</tr>\n".length())
-  return rows
-
-func _get_html_file_list_array(url: String) -> PackedStringArray:
-  return await _convert_html_file_list_to_array(await _get_html_file_list(url))
-
-func _add_builds_from_html(row: String):
-  var build_data: Dictionary = await _add_build_from_html(row)
-  if build_data.is_empty():
-    return
-  var child_list: PackedStringArray = await _get_html_file_list_array(build_data["url"])
-  child_list.reverse()
-  for child in child_list:
-    _add_prerelease_from_html(child, build_data["version"])
-
-func _get_godot_builds(builds: PackedStringArray):
-  for build in builds:
-    _add_builds_from_html(build)
+func _get_github_builds():
+  for release in await _get_releases_from_github():
+    _add_github_version(release["tag_name"], release["published_at"], release["html_url"], release["body"], release["assets"], release["prerelease"])
 
 func sort_versions():
   sorted_versions = versions.keys()
@@ -134,160 +92,117 @@ func sort_versions():
       return true
       )
 
-func _first_file_in_list(file_list: Array[String], patterns: Array[String]):
-  for pattern in patterns:
-    if pattern in file_list:
-      return pattern
-  return ""
+static func _markdown_to_bbcode_tag(markdown: String, regex_pattern: String, bbcode_tag: String, suffix := "") -> String:
+  var regex := RegEx.create_from_string(regex_pattern)
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}[{1}]{2}[/{1}]{3}".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), bbcode_tag, RE_match.strings[1], suffix])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_win64_url(file_list: Array[String], version: String, build: String) -> String:
-  return _first_file_in_list(file_list, [
-    "Godot_v%s-%s_win64.exe.zip" % [version, build],
-    "Godot_v%s-%s_mono_win64.zip" % [version, build],
-    ])
+static func _markdown_to_bbcode_url(markdown: String) -> String:
+  var regex := RegEx.create_from_string("\\[(.+)\\]\\((.+)\\)")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}[url={1}]{2}[/url]".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), RE_match.strings[2], RE_match.strings[1]])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_win32_url(file_list: Array[String], version: String, build: String) -> String:
-  return _first_file_in_list(file_list, [
-    "Godot_v%s-%s_win32.exe.zip" % [version, build],
-    "Godot_v%s-%s_mono_win32.zip" % [version, build],
-    ])
+static func _markdown_to_bbcode_ul(markdown: String) -> String:
+  var regex := RegEx.create_from_string("(?<=\n)- ?(.+)\n")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}[ul]{1}[/ul]\n".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), RE_match.strings[1]])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_macos_url(file_list: Array[String], version: String, build: String, mono := false) -> String:
-  return _first_file_in_list(file_list, [
-    "Godot_v%s-%s_macos.universal.zip" % [version, build],
-    "Godot_v%s-%s_mono_macos.universal.zip" % [version, build],
-    "Godot_v%s-%s_osx.universal.zip" % [version, build],
-    "Godot_v%s-%s_mono_osx.universal.zip" % [version, build],
-    "Godot_v%s-%s_osx.fat.zip" % [version, build],
-    "Godot_v%s-%s_mono_osx.fat.zip" % [version, build],
-    ])
+static func _markdown_to_bbcode_hr(markdown: String) -> String:
+  var regex := RegEx.create_from_string("\n---+\n")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}\n[fill][font_size=1][bgcolor=#cccccc] [/bgcolor][/font_size][/fill]\n".format([markdown.substr(plain_start, RE_match.get_start() - plain_start)])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_linux64_url(file_list: Array[String], version: String, build: String, mono := false) -> String:
-  return _first_file_in_list(file_list, [
-    "Godot_v%s-%s_linux.x86_64.zip" % [version, build],
-    "Godot_v%s-%s_mono_linux.x86_64.zip" % [version, build],
-    "Godot_v%s-%s_linux_x86_64.zip" % [version, build],
-    "Godot_v%s-%s_mono_linux_x86_64.zip" % [version, build],
-    "Godot_v%s-%s_x11.64.zip" % [version, build],
-    "Godot_v%s-%s_mono_x11.64.zip" % [version, build],
-    "Godot_v%s-%s_x11_64.zip" % [version, build],
-    "Godot_v%s-%s_mono_x11_64.zip" % [version, build],
-    ])
+static func _markdown_to_bbcode_h1(markdown: String) -> String:
+  var regex := RegEx.create_from_string("\n#(.+)\n")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}\n[font_size=30]{1}[/font_size]\n".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), RE_match.strings[1]])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_linux32_url(file_list: Array[String], version: String, build: String, mono := false) -> String:
-  return _first_file_in_list(file_list, [
-    "Godot_v%s-%s_linux.x86_32.zip" % [version, build],
-    "Godot_v%s-%s_mono_linux.x86_32.zip" % [version, build],
-    "Godot_v%s-%s_linux_x86_32.zip" % [version, build],
-    "Godot_v%s-%s_mono_linux_x86_32.zip" % [version, build],
-    "Godot_v%s-%s_x11.32.zip" % [version, build],
-    "Godot_v%s-%s_mono_x11.32.zip" % [version, build],
-    "Godot_v%s-%s_x11_32.zip" % [version, build],
-    "Godot_v%s-%s_mono_x11_32.zip" % [version, build],
-    ])
+static func _markdown_to_bbcode_h2(markdown: String) -> String:
+  var regex := RegEx.create_from_string("\n##(.+)\n")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}\n[font_size=24]{1}[/font_size]\n".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), RE_match.strings[1]])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_web_url(file_list: Array[String], version: String, build: String) -> String:
-  return _first_file_in_list(file_list, ["Godot_v%s-%s_web.zip" % [version, build]])
+static func _markdown_to_bbcode_h3(markdown: String) -> String:
+  var regex := RegEx.create_from_string("\n###(.+)\n")
+  var plain_start := 0
+  var bbcode := ""
+  for RE_match in regex.search_all(markdown):
+    bbcode += "{0}\n[font_size=20]{1}[/font_size]\n".format([markdown.substr(plain_start, RE_match.get_start() - plain_start), RE_match.strings[1]])
+    plain_start = RE_match.get_end()
+  return bbcode + markdown.substr(plain_start)
 
-func _find_readme_url(file_list: Array[String]) -> String:
-  return _first_file_in_list(file_list, ["README.txt"])
+static func _markdown_to_bbcode(markdown: String) -> String:
+  for converter in [
+    _markdown_to_bbcode_url, _markdown_to_bbcode_hr, _markdown_to_bbcode_ul,
+    _markdown_to_bbcode_h1, _markdown_to_bbcode_h2, _markdown_to_bbcode_h3
+    ]:
+      markdown = converter.call(markdown)
+  for conversion_pair in [
+      ["\\*\\*(.+)\\*\\*", "b", ""],
+      ["\\*(.+)\\*", "i", ""],
+      ["`(.+)`", "code", ""],
+    ]:
+      markdown = _markdown_to_bbcode_tag(markdown, conversion_pair[0], conversion_pair[1], conversion_pair[2])
+  return markdown
 
-func _add_version(version: String, build: String, modified: String, url_root: String) -> Dictionary:
-  var html_list: String = await _get_html_file_list(url_root)
-  var file_list: Array[String]
-  while not html_list.is_empty():
-    var row := HTML.get_child_tag(html_list, "tr")
-    if row.is_empty():
-      break
-    html_list = html_list.substr(html_list.find(row) + row.length() + "</tr>\n".length())
-    var row_name := HTML.get_child_tag(row, "td", ["class=\"n\""])
-    if row_name.is_empty():
-      continue
-    file_list.append(HTML.get_child_tag(row_name, "a"))
+func _add_github_version(version: String, modified: String, url: String, body: String, assets: Array, prerelease: bool):
+  var get_url := func(a): return a["browser_download_url"]
   var downloads := {
-      "Windows 64-bit": _find_win64_url(file_list, version, build),
-      "Windows 32-bit": _find_win32_url(file_list, version, build),
-      "macOS": _find_macos_url(file_list, version, build),
-      "Linux x86_64": _find_linux64_url(file_list, version, build),
-      "Linux x86_32": _find_linux32_url(file_list, version, build),
-      "Web": _find_web_url(file_list, version, build),
-      }
-  if "mono" in file_list:
-    html_list = await _get_html_file_list(url_root.path_join("mono"))
-    var mono_file_list: Array[String]
-    while not html_list.is_empty():
-      var row := HTML.get_child_tag(html_list, "tr")
-      if row.is_empty():
-        break
-      html_list = html_list.substr(html_list.find(row) + row.length() + "</tr>\n".length())
-      var row_name := HTML.get_child_tag(row, "td", ["class=\"n\""])
-      if row_name.is_empty():
-        continue
-      mono_file_list.append(HTML.get_child_tag(row_name, "a"))
-    downloads.merge({
-      "Windows 64-bit (Mono)": _find_win64_url(mono_file_list, version, build),
-      "Windows 32-bit (Mono)": _find_win32_url(mono_file_list, version, build),
-      "macOS (Mono)": _find_macos_url(mono_file_list, version, build),
-      "Linux x86_64 (Mono)": _find_linux64_url(mono_file_list, version, build),
-      "Linux x86_32 (Mono)": _find_linux32_url(mono_file_list, version, build)
-    })
-  for platform in downloads.keys():
-    if downloads[platform] == null or downloads[platform].is_empty():
-      downloads.erase(platform)
-    elif platform.contains("Mono"):
-      downloads[platform] = "mono".path_join(downloads[platform])
-  if downloads.is_empty():
-    return {
-      "version": version,
-      "build": build,
-      "url": url_root,
+      "Windows 64-bit": assets.filter(func(a): return a["name"].find("win64") != -1 and a["name"].find("mono") == -1).map(get_url).front(),
+      "Windows 32-bit": assets.filter(func(a): return a["name"].find("win32") != -1 and a["name"].find("mono") == -1).map(get_url).front(),
+      "macOS": assets.filter(func(a): return a["name"].find("macos") != -1 and a["name"].find("mono") == -1).map(get_url).front(),
+      "Linux x86_64": assets.filter(func(a): return a["name"].find("linux.x86_64") != -1 and a["name"].find("mono") == -1).map(get_url).front(),
+      "Linux x86_32": assets.filter(func(a): return a["name"].find("linux.x86_32") != -1 and a["name"].find("mono") == -1).map(get_url).front(),
+      "Web": assets.filter(func(a): return a["name"].find("web") != -1).map(get_url).front(),
+      "Windows 64-bit (Mono)": assets.filter(func(a): return a["name"].find("win64") != -1 and a["name"].find("mono") != -1).map(get_url).front(),
+      "Windows 32-bit (Mono)": assets.filter(func(a): return a["name"].find("win32") != -1 and a["name"].find("mono") != -1).map(get_url).front(),
+      "macOS (Mono)": assets.filter(func(a): return a["name"].find("macos") != -1 and a["name"].find("mono") != -1).map(get_url).front(),
+      "Linux x86_64 (Mono)": assets.filter(func(a): return a["name"].find("linux.x86_64") != -1 and a["name"].find("mono") != -1).map(get_url).front(),
+      "Linux x86_32 (Mono)": assets.filter(func(a): return a["name"].find("linux.x86_32") != -1 and a["name"].find("mono") != -1).map(get_url).front(),
     }
-  var key := "Godot %s %s" % [version, build]
+  for platform in downloads.keys():
+    if downloads[platform] == null:
+      downloads.erase(platform)
+  if downloads.is_empty():
+    return
+  var key := "Godot " + version.replace("-", " ")
   versions[key] = {
     "version": version,
-    "build": build,
     "modified": modified,
     "modified_dict": Time.get_datetime_dict_from_datetime_string(modified, false),
-    "url": url_root,
+    "url": url,
+    "readme": _markdown_to_bbcode(body),
     "downloads": downloads,
+    "prerelease": prerelease
   }
-  var readme: String = _find_readme_url(file_list)
-  if not readme.is_empty():
-    versions[key]["readme"] = readme
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  for i in 12:
-    if modified.contains(MONTHS[i]):
-      versions[key]["modified_dict"]["month"] = i
-      break
   logs.add("Added remote build data for " + key)
   save_build_data(key)
   sort_versions()
   versions_updated.emit()
-  return versions[key]
-
-func _add_build_from_html(row: String) -> Dictionary:
-    var row_name := HTML.get_child_tag(row, "td", ["class=\"n\""])
-    if row_name.is_empty():
-      return {}
-    var version := HTML.get_child_tag(row_name, "a")
-    if not (version.begins_with("3.") or version.begins_with("4.")):
-      return {}
-    var row_modified := HTML.get_child_tag(row, "td", ["class=\"m\""])
-    if row_modified.is_empty():
-      return {}
-    return await _add_version(version, "stable", row_modified, GODOT_URL.path_join(version))
-
-func _add_prerelease_from_html(row: String, version: String) -> Dictionary:
-    var row_name := HTML.get_child_tag(row, "td", ["class=\"n\""])
-    if row_name.is_empty():
-      return {}
-    var build := HTML.get_child_tag(row_name, "a")
-    if not build.begins_with("pre-alpha") and not build.begins_with("alpha") and not build.begins_with("beta") and not build.begins_with("rc") and not build.begins_with("dev"):
-      return {}
-    var row_modified := HTML.get_child_tag(row, "td", ["class=\"m\""])
-    if row_modified.is_empty():
-      return {}
-    return await _add_version(version, build, row_modified, GODOT_URL.path_join(version).path_join(build))
 
 signal versions_updated()
 
